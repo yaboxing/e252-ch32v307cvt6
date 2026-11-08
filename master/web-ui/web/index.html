@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E252 EtherCAT 主站调试台</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">E252</span>
+    <span class="brand-sub">EtherCAT Master Console</span>
+  </div>
+
+  <div class="conn">
+    <select id="adapterSelect" title="选择连接从站的网卡"></select>
+    <button id="btnRefreshAdapters" class="ghost" title="刷新网卡列表">刷新</button>
+    <button id="btnConnect" class="primary">连接</button>
+    <button id="btnDisconnect" class="ghost" disabled>断开</button>
+  </div>
+
+  <div class="badges">
+    <span class="badge" id="masterStateBadge">未连接</span>
+    <span class="badge" id="pushBadge">推送 连接中…</span>
+    <span class="badge" id="wkcBadge">WKC —</span>
+    <span class="badge" id="cycleBadge">— Hz</span>
+  </div>
+</header>
+
+<div id="toast" class="toast hidden"></div>
+
+<main class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <h3>状态机</h3>
+      <div class="state-grid">
+        <button data-state="INIT" class="state-btn">INIT</button>
+        <button data-state="PREOP" class="state-btn">PREOP</button>
+        <button data-state="SAFEOP" class="state-btn">SAFEOP</button>
+        <button data-state="OP" class="state-btn op">OP</button>
+      </div>
+      <div class="row">
+        <button id="btnAck" class="ghost small" title="AL Control = 当前状态 | ACK，清除从站错误位">ACK 清错</button>
+        <label class="num">周期
+          <input id="periodInput" type="number" min="0.5" max="50" step="0.5" value="2"> ms
+        </label>
+        <button id="btnCycle" class="ghost small">暂停周期</button>
+      </div>
+      <p class="hint">切换到 OP 会自动先进入 SAFEOP；状态切换期间界面会等待并回读 AL 状态码。</p>
+    </section>
+
+    <section class="panel grow">
+      <h3>从站列表 <span class="pill" id="slaveCount">0</span></h3>
+      <div id="slaveList" class="slave-list">
+        <div class="empty">尚未连接，请选择网卡后点击“连接”</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>快速诊断</h3>
+      <div id="quickDiag" class="quick-diag muted">—</div>
+    </section>
+  </aside>
+
+  <section class="workarea">
+    <nav class="tabs">
+      <button data-tab="overview" class="active">概览</button>
+      <button data-tab="demo">IO 演示</button>
+      <button data-tab="od">对象字典</button>
+      <button data-tab="pdo">PDO 监视</button>
+      <button data-tab="diag">诊断 / EMCY</button>
+    </nav>
+
+    <div class="tab-body">
+      <div id="tab-overview" class="tab active">
+        <div id="ovWarning" class="banner warn hidden"></div>
+        <div class="cards" id="ovCards">
+          <div class="card">
+            <h4>连接</h4>
+            <div id="ovConn" class="kv muted">未连接</div>
+          </div>
+          <div class="card">
+            <h4>从站状态</h4>
+            <div id="ovState" class="kv muted">—</div>
+          </div>
+          <div class="card">
+            <h4>过程数据</h4>
+            <div id="ovProc" class="kv muted">—</div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="card">
+            <h4>身份信息（SII / EEPROM 与对象字典 0x1018 对比）</h4>
+            <div id="ovIdentity" class="muted">—</div>
+          </div>
+          <div class="card">
+            <h4>同步管理器寄存器</h4>
+            <div id="ovSm" class="muted">—</div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="card">
+            <h4>PDO 分配（SDO 0x1C12 / 0x1C13）</h4>
+            <div id="ovAssign" class="muted">—</div>
+          </div>
+          <div class="card">
+            <h4>同步参数</h4>
+            <div id="ovSync" class="muted">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-demo" class="tab">
+        <div class="demo-grid">
+          <div class="card">
+            <h4>RxPDO 控制（byte0；byte1..5 固定 00 34 12 78 56）</h4>
+            <div class="demo-cmds">
+              <button class="demo-cmd" data-byte="1"><b>0x01</b><span>LED1 亮</span></button>
+              <button class="demo-cmd" data-byte="2"><b>0x02</b><span>LED2 亮</span></button>
+              <button class="demo-cmd" data-byte="3"><b>0x03</b><span>双灯亮</span></button>
+              <button class="demo-cmd" data-byte="0"><b>0x00</b><span>全灭</span></button>
+              <button class="demo-cmd" data-byte="4"><b>0x04</b><span>PWM 互补呼吸</span></button>
+            </div>
+            <div class="raw-line">当前下发帧：<code id="demoOutFrame">—</code></div>
+            <div class="raw-line">最近命令：<code id="demoLastCmd">—</code></div>
+            <div id="demoStateNote" class="pdo-note">—</div>
+          </div>
+          <div class="card">
+            <h4>TxPDO 输入（byte0 bit0 = USER 按键，1=按下）</h4>
+            <div class="key-panel">
+              <div id="demoKeyLamp" class="key-lamp">USER</div>
+              <div class="kv">
+                <div>按键位：<b id="demoKeyBit">—</b></div>
+                <div>按下次数：<b id="demoKeyPresses">—</b></div>
+                <div>跳变次数：<b id="demoKeyEdges">—</b></div>
+                <div>最近变化：<b id="demoKeyLast">—</b></div>
+                <div>推送延迟：<b id="demoPushLat">—</b></div>
+              </div>
+            </div>
+            <div class="raw-line">当前输入帧：<code id="demoInFrame">—</code></div>
+            <div id="demoKeyEvents" class="table-wrap small">—</div>
+          </div>
+        </div>
+        <div class="card">
+          <h4>演示协议说明</h4>
+          <div class="tips small">
+            <p>· byte0 bit0 = LED1，bit1 = LED2（1 = 亮）；bit2 = PWM 互补呼吸（0.5 Hz 三角调光）。</p>
+            <p>· byte1..5 固定 00 34 12 78 56，对应 AO1 = 0x1234、PWM1 = 0x5678。</p>
+            <p>· 演示命令仅在 OP 状态生效；SAFEOP 下输出帧不会发送到从站。</p>
+            <p>· 按键联调：主站每帧（约 2 ms）采样 TxPDO byte0 bit0，按下/松开都会记录到事件表。</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-od" class="tab">
+        <div class="od-layout">
+          <div class="od-list-wrap">
+            <div class="od-toolbar">
+              <span>对象列表 <span class="pill" id="odCount">0</span></span>
+              <button id="btnOdReload" class="ghost small">重新读取</button>
+            </div>
+            <div id="odObjectList" class="od-list muted">选择从站后加载对象字典</div>
+          </div>
+          <div class="od-detail-wrap">
+            <div class="od-detail-head">
+              <span id="odDetailTitle" class="muted">未选择对象</span>
+              <button id="btnOdReadAll" class="ghost small" disabled>读取全部子项</button>
+            </div>
+            <div id="odSubs" class="od-subs muted">—</div>
+            <div class="raw-sdo">
+              <h5>任意 SDO 读写</h5>
+              <div class="raw-row">
+                <label>Index <input id="rawIndex" placeholder="0x1000"></label>
+                <label>Sub <input id="rawSub" value="0"></label>
+                <label class="grow">数据（hex，空格可选） <input id="rawData" placeholder="00 01 02"></label>
+                <button id="btnRawRead" class="ghost small">读</button>
+                <button id="btnRawWrite" class="primary small">写</button>
+              </div>
+              <div id="rawResult" class="muted small">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-pdo" class="tab">
+        <div id="pdoWarning" class="banner warn hidden"></div>
+        <div class="pdo-grid">
+          <div class="card">
+            <h4>TxPDO → 主站（输入 <span id="pdoInSize" class="pill">—</span>）</h4>
+            <div id="pdoInputs" class="signal-list muted">—</div>
+            <div class="raw-line">原始：<code id="pdoRawIn">—</code></div>
+          </div>
+          <div class="card">
+            <h4>RxPDO ← 主站（输出 <span id="pdoOutSize" class="pill">—</span>）</h4>
+            <div id="pdoOutputs" class="signal-list muted">—</div>
+            <div class="raw-line">原始：<code id="pdoRawOut">—</code></div>
+            <div class="raw-row">
+              <label class="grow">整帧覆盖（hex，调试用；会同时改写全部输出位）
+                <input id="pdoRawInput" placeholder="00 00 00 00 00 00"></label>
+              <button id="btnPdoRawWrite" class="ghost small">写整帧</button>
+            </div>
+            <p class="hint">上面的输出位勾选/修改后会立即下发，只改该字段、其余位保持不变；整帧覆盖仅用于调试或一次设置多个字段。</p>
+          </div>
+        </div>
+        <div class="card">
+          <h4>映射详情（来自 SDO 0x1C12/0x1C13、0x16xx、0x1Axx）</h4>
+          <div id="pdoMapInfo" class="muted small">—</div>
+        </div>
+      </div>
+
+      <div id="tab-diag" class="tab">
+        <div class="cards">
+          <div class="card">
+            <h4>当前诊断摘要</h4>
+            <div id="diagSummary" class="muted">—</div>
+          </div>
+          <div class="card">
+            <h4>操作提示</h4>
+            <div class="tips small">
+              <p>· 从站无法进入 SAFEOP/OP 时，优先核对 AL 状态码与 SII/对象字典是否一致。</p>
+              <p>· 0x001E 输入配置无效：常见于 EEPROM 中的 SII 来自其它工程，导致主站按错误映射配置 SM3/FMMU。</p>
+              <p>· 0x001B 同步管理器看门狗：确认周期通信未暂停，或增大周期时间。</p>
+              <p>· SDO 读写仅在 PREOP 及以上状态可用。</p>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h4>AL 状态码记录</h4>
+          <div id="alHistory" class="table-wrap muted">—</div>
+        </div>
+        <div class="card">
+          <div class="card-head-row">
+            <h4>EMCY 紧急消息</h4>
+            <button id="btnClearEmcy" class="ghost small">清空</button>
+          </div>
+          <div id="emcyList" class="table-wrap muted">—</div>
+        </div>
+        <div class="card">
+          <h4>日志</h4>
+          <div id="logView" class="log-view"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

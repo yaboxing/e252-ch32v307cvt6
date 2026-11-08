@@ -35,6 +35,7 @@
 *.i*86
 *.x86_64
 *.hex
+*.bin
 
 # Debug files
 *.dSYM/
@@ -53,3 +54,22 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Build output
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+*.log
+.env
+
+# Generated PDFs (kept outside the repository)
+docs/pdf/

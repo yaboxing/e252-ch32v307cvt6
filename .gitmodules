@@ -1,0 +1,8 @@
+[submodule "third_party/soem"]
+	path = third_party/soem
+	url = https://github.com/WiseL00k/SOEM.git
+	branch = codex/windows-ci-dependency
+[submodule "third_party/DynamicxEcatTool"]
+	path = third_party/DynamicxEcatTool
+	url = https://github.com/WiseL00k/DynamicxEcatTool.git
+	branch = master
