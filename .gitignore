@@ -58,6 +58,11 @@ dkms.conf
 # Build output
 out/
 
+# MounRiver Studio 3 generated project/build files
+obj/
+*.wvproj
+**/.mrs/*.mrs-workspace
+
 # Python
 __pycache__/
 *.py[cod]
